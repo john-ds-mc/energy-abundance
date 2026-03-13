@@ -58,14 +58,32 @@ const B = {
   otherWelfare: 69.5,         // housing benefit, child, other
   totalWelfare: 313,          // total
 
+  // Departmental spending breakdown (OBR/HMT PESA 2024-25, £bn)
+  nhsSpend: 180,              // DHSC total DEL + ALIS
+  defenceSpend: 62.2,         // MoD (SDR 2025: rising to 2.5% GDP)
+  educationSpend: 105,        // DfE + skills + HE
+  asylumSpend: 4.5,           // Home Office asylum costs (gross)
+  justiceSpend: 12,           // MoJ + courts + prisons
+  transportSpend: 18,         // DfT (excl HS2 capital)
+  localGovSpend: 40,          // DLUHC local gov support
+  otherDeptSpend: 496,        // everything else (£957bn total - named depts)
+  // £957bn = TME £1270bn - welfare £313bn. Named: 180+62+105+4.5+12+18+40 = 421.5. Other: 535.5
+
   // Growth rates (OBR)
   pensionTripleLock: 6.0,     // ~6% annual growth under triple lock (WP)
   pensionDoubleLock: 3.0,     // CPI + 0.5%
   disabilityGrowth: 8.0,      // IFS: +£24bn since 2019-20 on £57bn base
   ucGrowth: 3.5,
   otherWelfGrowth: 3.0,
-  nonWelfSpendGrowth: 3.0,
+  nhsBaseGrowth: 3.6,         // NHSE long-term plan: 3.4-3.8% real (Wanless/OBR)
+  defenceGdpPct: 2.3,         // current ~2.3% GDP, NATO target 2.5%
+  educationGrowth: 2.5,       // real terms (schools + HE)
+  otherDeptGrowth: 2.0,       // real terms (efficiency assumed)
   obrBaseGrowth: [1.5, 1.4, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5],
+
+  // Debt interest dynamics
+  avgCouponRate: 3.8,         // weighted avg coupon on existing gilt stock (DMO)
+  debtStock: 2678,            // PSND £bn (96% of £2790bn GDP)
 
   // Energy (DESNZ/Carbon Brief 2025)
   nuclearGW: 5.9,             // current installed
@@ -112,7 +130,6 @@ const B = {
   freeportInvestment: 6.4,   // £bn attracted to date
   nwfCapital: 27.8,          // National Wealth Fund total
   gbeCapital: 8.3,           // GBE + GBE-Nuclear
-  defenceSpend: 62.2,        // £bn 2025-26
   steelInvestment: 2.5,      // £bn committed
   gigafactoryGWh: 60,        // planned (Agratas 40 + AESC 20)
 
@@ -284,6 +301,14 @@ export default function EnergyAbundanceGame() {
   const [giltRate, setGiltRate] = useState(4.5);
   const [giltSpread, setGiltSpread] = useState(0);  // bp over baseline (Truss = +130bp)
 
+  /* ─── SPENDING ─── */
+  const [nhsGrowth, setNhsGrowth] = useState(3.6);            // % real
+  const [defenceTarget, setDefenceTarget] = useState(2.5);     // % GDP
+  const [educationGrowth, setEducationGrowth] = useState(2.5); // % real
+  const [asylumSpend, setAsylumSpend] = useState(4.5);         // £bn/yr
+  const [publicSectorEfficiency, setPublicSectorEfficiency] = useState(0); // % annual saving on other depts
+  const [localGovGrowth, setLocalGovGrowth] = useState(3.0);   // % real
+
   /* ─── PILLAR 1: NUCLEAR ─── */
   const [nuclearScale, setNuclearScale] = useState(100);     // % of WP programme
   const [costOverrun, setCostOverrun] = useState(0);         // % over baseline cost
@@ -335,21 +360,46 @@ export default function EnergyAbundanceGame() {
       const gdp = B.gdpNominal * Math.pow(1 + nomGrowth, t);
       const rev = B.receipts * Math.pow(1 + B.receiptsGrowth / 100, t);
 
+      // Previous year reformed GDP (for defence % GDP calc)
+      const prevReformedGrowth = i > 0 ? (rows[i-1].reformedGrowth as number) : baseGrowth;
+      const refGdpPrev = i > 0
+        ? B.gdpNominal * Math.pow(1 + prevReformedGrowth / 100 + inflation / 100, t)
+        : B.gdpNominal;
+
+      // Energy bonds: reduce effective gilt cost by 15-20bp through dedicated issuance
+      const bondBenefitVal = energyBonds ? 0.15 : 0;
+
       // ── Welfare baseline (OBR trajectory)
       const pension = B.statePension * Math.pow(1 + B.pensionTripleLock / 100, t);
       const disability = B.disabilityWA * Math.pow(1 + B.disabilityGrowth / 100, t);
       const uc = B.universalCredit * Math.pow(1 + B.ucGrowth / 100, t);
       const otherW = (B.pensionOther + B.otherWelfare) * Math.pow(1 + B.otherWelfGrowth / 100, t);
       const totalWelfare = pension + disability + uc + otherW;
-      const nonWelfSpend = (B.tme - B.totalWelfare) * Math.pow(1 + B.nonWelfSpendGrowth / 100, t);
 
-      // Debt interest: OBR sensitivity model
-      // Base + gilt rate deviation effect + spread effect
-      const effectiveGilt = giltRate + giltSpread / 100;
-      const giltDeviation = effectiveGilt - 4.5;
-      const debtInt = B.debtInterest * (1 + giltDeviation * (B.giltSensitivity / B.debtInterest) * 0.3) * Math.pow(1.02, t);
+      // ── Departmental spending (broken out for user control)
+      const nhsSpd = B.nhsSpend * Math.pow(1 + nhsGrowth / 100, t);
+      // Defence: tracks % of GDP (NATO target), so grows with economy
+      const defenceSpd = refGdpPrev * (defenceTarget / 100);
+      const eduSpd = B.educationSpend * Math.pow(1 + educationGrowth / 100, t);
+      const asylumSpd = asylumSpend; // flat — user sets absolute level
+      const justiceSpd = B.justiceSpend * Math.pow(1 + 2.5 / 100, t);
+      const transportSpd = B.transportSpend * Math.pow(1 + 2.0 / 100, t);
+      const localGovSpd = B.localGovSpend * Math.pow(1 + localGovGrowth / 100, t);
+      const otherDeptSpd = B.otherDeptSpend * Math.pow(1 + Math.max(0, B.otherDeptGrowth - publicSectorEfficiency) / 100, t);
+      const totalDeptSpend = nhsSpd + defenceSpd + eduSpd + asylumSpd + justiceSpd + transportSpd + localGovSpd + otherDeptSpd;
 
-      const baseSpend = totalWelfare + nonWelfSpend + debtInt;
+      // ── Debt interest (stock-responsive, gilt-sensitive)
+      // Model: existing stock refinances at 1/maturity per year → gradually reprices
+      // New borrowing priced at current gilt rate. Energy bonds reduce rate on subset.
+      const effectiveGilt = giltRate + giltSpread / 100 - bondBenefitVal;
+      const prevDebtStock = i > 0 ? (rows[i-1].debtStock as number) : B.debtStock;
+      const shareRepriced = Math.min(1, t / B.avgDebtMaturity); // portion of old stock repriced
+      const blendedRate = B.avgCouponRate * (1 - shareRepriced) + effectiveGilt * shareRepriced;
+      const debtInt = prevDebtStock * (blendedRate / 100) +
+        // marginal cost: new borrowing (last year's deficit) at current gilt rate
+        (i > 0 ? Math.max(0, rows[i-1].baseDeficit as number) * (effectiveGilt / 100) : 0);
+
+      const baseSpend = totalWelfare + totalDeptSpend + debtInt;
       const baseDeficit = baseSpend - rev;
 
       // ── PILLAR 1: Nuclear capacity
@@ -439,9 +489,6 @@ export default function EnergyAbundanceGame() {
       const gigaCost = gigafactories ? (t < 4 ? 1.0 : 0) : 0;
       const gigaRev = gigafactories && t >= 4 ? 1.5 * Math.min(1, (t - 3) / 4) : 0;
       const industrialGrowth = (greenSteelInvest ? 0.05 : 0) + (gigafactories ? 0.1 : 0);
-
-      // Energy bonds: reduce effective gilt cost by 15-20bp through dedicated issuance
-      const bondBenefit = energyBonds ? 0.15 : 0;
 
       // ── ENERGY PRICE (computed first — DC demand depends on it)
       const reliableCap = nucGW + renGW * 0.30; // wind CF ~0.30 equiv
@@ -549,8 +596,13 @@ export default function EnergyAbundanceGame() {
         windCfd: Math.round(windCfd),
         gridCost: Math.round(gridCost),
         debtInt: Math.round(debtInt),
+        debtStock: Math.round(refDebt),
         lvtRev: Math.round(lvtRevenue),
         nicCost: Math.round(nicCost),
+        nhsSpend: Math.round(nhsSpd),
+        defenceSpend: Math.round(defenceSpd),
+        eduSpend: Math.round(eduSpd),
+        totalDeptSpend: Math.round(totalDeptSpend),
       });
     }
     return rows;
@@ -562,6 +614,8 @@ export default function EnergyAbundanceGame() {
       employerNICut, corpTaxRate, planningReform, freeportExpansion, lvt,
       greenSteelInvest, gigafactories,
       energyBonds, renewableScale,
+      nhsGrowth, defenceTarget, educationGrowth, asylumSpend,
+      publicSectorEfficiency, localGovGrowth,
       scenarioMult, reformDiscount]);
 
   const last = data[YEARS - 1] as Record<string, number>;
@@ -637,6 +691,8 @@ export default function EnergyAbundanceGame() {
     setPlanningReform(100); setFreeportExpansion(50); setLvt(0);
     setGreenSteelInvest(true); setGigafactories(true);
     setEnergyBonds(true); setRenewableScale(100);
+    setNhsGrowth(3.6); setDefenceTarget(2.5); setEducationGrowth(2.5);
+    setAsylumSpend(4.5); setPublicSectorEfficiency(0); setLocalGovGrowth(3.0);
     setScenario("central"); setUnlockedAchs(new Set()); setToastQueue([]);
   };
 
@@ -644,12 +700,13 @@ export default function EnergyAbundanceGame() {
   const endogenousDC = data.length > 0 ? (data[data.length - 1].dcDemand as number) : 0;
 
   const quickScenarios = [
-    { label: "Do Nothing", fn: () => { setNuclearScale(0); setSmrUnits(0); setKoreanGW(0); setPipReform(false); setWcaTighten(false); setTripleLockReform(false); setAiPublicSector(0); setPlanningReform(0); setDcInvestmentClimate(30); } },
+    { label: "Do Nothing", fn: () => { setNuclearScale(0); setSmrUnits(0); setKoreanGW(0); setPipReform(false); setWcaTighten(false); setTripleLockReform(false); setAiPublicSector(0); setPlanningReform(0); setDcInvestmentClimate(30); setPublicSectorEfficiency(0); setNhsGrowth(3.6); setDefenceTarget(2.3); } },
     { label: "White Paper Central", fn: reset },
     { label: "Korean + SMR Blitz", fn: () => { setKoreanPartnership(true); setKoreanGW(10); setSmrUnits(16); setNuclearScale(130); setCostOverrun(-20); } },
     { label: "Gilt Crisis (+130bp)", fn: () => { setGiltSpread(130); setBaseGrowth(0.8); } },
     { label: "AI Supercycle", fn: () => { setAiPublicSector(100); setDcInvestmentClimate(150); setPlanningReform(100); } },
-    { label: "Full Radical Reform", fn: () => { reset(); setTripleLockReform(true); setSpaAccelerate(true); setAiPublicSector(80); setEmployerNICut(30); setLvt(50); setPlanningReform(100); setFreeportExpansion(100); setKoreanGW(8); setSmrUnits(16); setNuclearScale(130); setDcInvestmentClimate(130); } },
+    { label: "Full Radical Reform", fn: () => { reset(); setTripleLockReform(true); setSpaAccelerate(true); setAiPublicSector(80); setEmployerNICut(30); setLvt(50); setPlanningReform(100); setFreeportExpansion(100); setKoreanGW(8); setSmrUnits(16); setNuclearScale(130); setDcInvestmentClimate(130); setPublicSectorEfficiency(1.5); setAsylumSpend(2); } },
+    { label: "Austerity", fn: () => { reset(); setNhsGrowth(1.5); setDefenceTarget(2.0); setEducationGrowth(1.0); setAsylumSpend(2); setPublicSectorEfficiency(2.5); setLocalGovGrowth(1.0); setNationalOpportunityFund(false); setNhsMHInvest(false); } },
     { label: "Reset All", fn: reset },
   ];
 
@@ -718,8 +775,8 @@ export default function EnergyAbundanceGame() {
           <StatBox label="GROWTH" value={`${last.reformedGrowth}%`} sub={`OBR: ${last.baseGrowth}%`} color={(last.reformedGrowth as number) >= 3 ? COLORS.green : COLORS.yellow} />
           <StatBox label="DEFICIT" value={`£${Math.abs(last.deficit as number)}bn`} sub={surplus ? "SURPLUS" : "deficit"} color={surplus ? COLORS.green : COLORS.red} warn={!surplus && (last.deficit as number) > 80} />
           <StatBox label="DEBT/GDP" value={`${last.debtGdp}%`} sub={`net of asset: ${last.netDebtGdp}%`} color={(last.debtGdp as number) < 95 ? COLORS.teal : COLORS.red} warn={(last.debtGdp as number) > 110} />
+          <StatBox label="DEBT INT" value={`£${last.debtInt}bn`} sub={`base: £${B.debtInterest}bn`} color={(last.debtInt as number) > 130 ? COLORS.red : COLORS.yellow} warn={(last.debtInt as number) > 150} />
           <StatBox label="DATA CENTRES" value={`${endogenousDC.toFixed(1)}GW`} sub="endogenous demand" color={COLORS.cyan} />
-          <StatBox label="CO2 CUT" value={`${last.co2}%`} color={COLORS.green} />
         </div>
 
         {/* MAIN GRID */}
@@ -734,6 +791,18 @@ export default function EnergyAbundanceGame() {
               <Slider label="Gilt Yield" min={2} max={8} step={0.1} value={giltRate} onChange={setGiltRate} unit="%" source="Current: 4.5%. +1pp = +£20.8bn interest (OBR)" />
               <Slider label="Gilt Spread (bp)" min={-50} max={200} step={5} value={giltSpread} onChange={setGiltSpread} unit="bp" source="Truss crisis: +130bp. Energy Bonds can offset." />
               <Toggle label="50-Year Energy Bonds" checked={energyBonds} onChange={setEnergyBonds} source="Dedicated issuance backed by nuclear PPAs" />
+            </Card>
+
+            <Card title="Departmental Spending" accent={COLORS.pink}>
+              <Slider label="NHS Real Growth" min={0} max={7} step={0.1} value={nhsGrowth} onChange={setNhsGrowth} unit="%" source="OBR: 3.4-3.8%. Wanless: 4.2% needed. Current: £180bn" />
+              <Slider label="Defence (% GDP)" min={1.5} max={3.5} step={0.1} value={defenceTarget} onChange={setDefenceTarget} unit="%" source="NATO: 2.5% target. SDR 2025: £62.2bn (2.3%)" />
+              <Slider label="Education Growth" min={0} max={5} step={0.1} value={educationGrowth} onChange={setEducationGrowth} unit="%" source="Schools + HE. Current: £105bn. IFS: real cut since 2010" />
+              <Slider label="Asylum/Immigration" min={0} max={10} step={0.5} value={asylumSpend} onChange={setAsylumSpend} unit="£bn" source="Home Office: £4.5bn. Rwanda scheme was £0.7bn. Hotels £8m/day" />
+              <Slider label="Local Gov Growth" min={0} max={5} step={0.1} value={localGovGrowth} onChange={setLocalGovGrowth} unit="%" source="DLUHC: £40bn. Councils face 3.5% cost growth (LGA)" />
+              <Slider label="Dept Efficiency Saving" min={0} max={3} step={0.1} value={publicSectorEfficiency} onChange={setPublicSectorEfficiency} unit="%" source="Applies to other depts. 1% = ~£5bn/yr. Gershon: 2.5% max" />
+              <div style={{ fontSize: 8.5, fontFamily: MONO, color: "#3a4558", lineHeight: 1.4, marginTop: 4 }}>
+                Year {YEARS}: NHS £{last.nhsSpend}bn · Defence £{last.defenceSpend}bn · Edu £{last.eduSpend}bn · Dept Total £{last.totalDeptSpend}bn
+              </div>
             </Card>
 
             <Card title="Pillar 1: Nuclear Fleet" accent={COLORS.blue}>
@@ -938,7 +1007,7 @@ export default function EnergyAbundanceGame() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, fontFamily: MONO }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid #2a3441" }}>
-                      {["Year","Nuc","Ren","£/MWh","Growth","Deficit","Base Def","Debt%","Net D%","Reform","Nuc Cost","DC GW","DC Tax","Export"].map(h => (
+                      {["Year","Nuc","Ren","£/MWh","Growth","Deficit","Base Def","Debt Int","Debt%","Net D%","Reform","Nuc Cost","DC GW","DC Tax","Export"].map(h => (
                         <th key={h} style={{ padding: "3px 5px", textAlign: "right", color: "#4a5568", fontWeight: 500, fontSize: 8.5, whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -953,6 +1022,7 @@ export default function EnergyAbundanceGame() {
                         <td style={{ padding: "3px 5px", textAlign: "right", color: (r.reformedGrowth as number) >= 3 ? COLORS.green : COLORS.yellow, fontWeight: 700 }}>{r.reformedGrowth}%</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: (r.deficit as number) < 0 ? COLORS.green : COLORS.red, fontWeight: 700 }}>£{r.deficit}bn</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.red }}>£{r.baseDeficit}bn</td>
+                        <td style={{ padding: "3px 5px", textAlign: "right", color: (r.debtInt as number) > 120 ? COLORS.red : "#6b7a8d" }}>£{r.debtInt}bn</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: (r.debtGdp as number) > 105 ? COLORS.red : "#6b7a8d" }}>{r.debtGdp}%</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.teal }}>{r.netDebtGdp}%</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.purple }}>£{r.totalReformSaving}bn</td>
@@ -967,21 +1037,74 @@ export default function EnergyAbundanceGame() {
               </div>
             </Card>
 
-            <div style={{ fontSize: 7.5, fontFamily: MONO, color: "#1a2332", lineHeight: 1.5, marginTop: 6 }}>
-              Sources: OBR EFO Nov 2025 · IFS Triple Lock & Disability Analysis · DESNZ Energy Trends Dec 2025 · Carbon Brief 2025 ·
-              DMO Debt Management Report 2025-26 (gilt sensitivity: +1pp = +£20.8bn) · National Grid ESO (739GW queue → 283GW reformed) ·
-              Public First AI Savings · CSJ Disability Reform · DUKES 2025 (capacity factors) · Ofgem Price Cap · DWP Annual Report 2024-25 ·
-              World Nuclear Association · HMRC (NICs £108bn, CT £91.2bn) · OBR Planning Reform Impact · Freeport Investment Data (£6.4bn) ·
-              NWF (£27.8bn) · GBE (£8.3bn) · Defence SDR 2025 (£62.2bn) · Breaking the Doom Loop v2.0 White Paper
+          </div>
+        </div>
+
+        {/* ═══ CITATIONS ═══ */}
+        <div style={{ marginTop: 24, padding: "20px 18px", background: "rgba(15,23,42,0.4)", borderRadius: 12, border: "1px solid rgba(78,205,196,0.08)" }}>
+          <div style={{ fontSize: 11, fontFamily: MONO, color: COLORS.teal, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12, fontWeight: 600 }}>
+            Sources & Citations
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 24px", fontSize: 9, fontFamily: MONO, color: "#4a5568", lineHeight: 1.6 }}>
+            <div>
+              <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>FISCAL & MACRO</div>
+              <div>[1] OBR, <span style={{ color: "#5a6578" }}>Economic & Fiscal Outlook</span>, Nov 2025 — GDP, receipts, TME, PSNB, PSND, growth forecasts</div>
+              <div>[2] OBR, <span style={{ color: "#5a6578" }}>Fiscal Risks & Sustainability Report</span>, Jul 2025 — gilt sensitivity (+1pp = +£20.8bn), debt dynamics</div>
+              <div>[3] DMO, <span style={{ color: "#5a6578" }}>Debt Management Report 2025-26</span> — £299bn gross issuance, 14yr avg maturity, 3.8% avg coupon</div>
+              <div>[4] HM Treasury, <span style={{ color: "#5a6578" }}>PESA 2024-25</span> — departmental spending breakdown (NHS £180bn, MoD £62bn, DfE £105bn)</div>
+              <div>[5] IFS, <span style={{ color: "#5a6578" }}>Green Budget 2025</span> — reform delivery rates (40-70% historical), fiscal headroom analysis</div>
             </div>
+            <div>
+              <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>ENERGY & NUCLEAR</div>
+              <div>[6] DESNZ, <span style={{ color: "#5a6578" }}>Energy Trends</span>, Dec 2025 — installed capacity (5.9GW nuclear, 60.6GW renewable)</div>
+              <div>[7] DUKES 2025, <span style={{ color: "#5a6578" }}>Ch.5 & Ch.6</span> — capacity factors (nuclear 72%, offshore wind 35%, solar 9.5%)</div>
+              <div>[8] Ofgem, <span style={{ color: "#5a6578" }}>Price Cap Q2 2025</span> — £1,720/yr household, ~£80/MWh wholesale</div>
+              <div>[9] World Nuclear Association, <span style={{ color: "#5a6578" }}>Country Profile: UK</span> — HPC £46bn/3.2GW, SZC £38bn/3.2GW</div>
+              <div>[10] Carbon Brief, <span style={{ color: "#5a6578" }}>UK Electricity Generation 2025</span> — emissions intensity, renewable share</div>
+            </div>
+            <div>
+              <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>WELFARE & REFORM</div>
+              <div>[11] IFS, <span style={{ color: "#5a6578" }}>The Triple Lock After 2025</span> — £12bn/yr savings from CPI+0.5%, compounding analysis</div>
+              <div>[12] IFS, <span style={{ color: "#5a6578" }}>Disability Benefits: The Next Spending Challenge</span> — +£24bn since 2019-20 on £57bn base (8%/yr)</div>
+              <div>[13] DWP, <span style={{ color: "#5a6578" }}>Annual Report 2024-25</span> — UC £32.5bn, state pension £146bn, PIP £19bn</div>
+              <div>[14] CSJ, <span style={{ color: "#5a6578" }}>Reforming Disability Benefits</span> — £7.4bn gross savings, implementation pathway</div>
+              <div>[15] Public First, <span style={{ color: "#5a6578" }}>AI in the Public Sector</span>, 2025 — up to £38bn/yr efficiency gains (WP halves to £10-18bn)</div>
+            </div>
+            <div>
+              <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>INDUSTRIAL & GRID</div>
+              <div>[16] National Grid ESO, <span style={{ color: "#5a6578" }}>Connections Queue Report</span> — 739GW queue, 283GW post-reform pipeline</div>
+              <div>[17] HMRC, <span style={{ color: "#5a6578" }}>Tax Receipts Statistics</span> — employer NICs £108bn, corporation tax £91.2bn</div>
+              <div>[18] OBR, <span style={{ color: "#5a6578" }}>Planning Reform Impact Assessment</span> — +0.2% GDP by 2029, +0.4% by 2034</div>
+              <div>[19] DLUHC, <span style={{ color: "#5a6578" }}>Freeports & Investment Zones</span> — £6.4bn attracted, 22 zones operational</div>
+              <div>[20] MoD, <span style={{ color: "#5a6578" }}>Strategic Defence Review 2025</span> — £62.2bn budget, 2.5% GDP target</div>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>DEBT INTEREST MODEL</div>
+              <div>[21] OBR, <span style={{ color: "#5a6578" }}>Supplementary Fiscal Tables</span>, Nov 2025 — net debt interest £105bn, 59% refinance share, gilt sensitivity parameters</div>
+              <div>[22] DMO, <span style={{ color: "#5a6578" }}>Quarterly Review Q4 2025</span> — weighted avg coupon 3.8%, maturity profile, index-linked share</div>
+              <div>[23] BoE, <span style={{ color: "#5a6578" }}>Yield Curve Data</span> — current 10yr gilt ~4.5%, term premium decomposition</div>
+              <div style={{ color: "#3a4558", marginTop: 4 }}>
+                Model: debt interest = (existing stock x blended rate) + (new borrowing x current gilt rate).
+                Blended rate transitions from 3.8% avg coupon to market rate over 14yr avg maturity.
+                Energy bonds reduce effective rate by 15bp on nuclear-related issuance.
+                OBR sensitivity benchmark: +1pp across curve = +£20.8bn/yr at steady state.
+              </div>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>WHITE PAPER</div>
+              <div>[24] McNally, J., <span style={{ color: "#5a6578" }}>Breaking the Doom Loop v2.0: A 4-Pillar Programme for Energy Abundance</span> — nuclear fleet schedule, consolidated fiscal position (p12), growth arithmetic (p13), reform savings by scenario (p11), risk register (p14-15), Korean partnership model (£3.3bn/GW vs £14.4bn/GW HPC)</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 8, fontFamily: MONO, color: "#222b3a", marginTop: 12, lineHeight: 1.5, borderTop: "1px solid rgba(78,205,196,0.06)", paddingTop: 10 }}>
+            All assumptions are adjustable via sliders and toggles. Reform savings discounted per IFS methodology — historical UK welfare reforms deliver 40-70% of projected savings.
+            Debt interest model uses stock-flow consistent accounting: existing debt reprices gradually as gilts mature and are refinanced at current yields.
+            Nuclear timeline: 15-20 GW by year 10, 50 GW by year 20. Binding constraint is workforce (50-80k skilled workers), not regulation.
           </div>
         </div>
 
         <footer style={{ textAlign: "center", padding: "20px 0 10px", borderTop: "1px solid rgba(78,205,196,0.06)", marginTop: 16 }}>
           <div style={{ fontSize: 8, fontFamily: MONO, color: "#151d2b", letterSpacing: "0.08em", lineHeight: 1.5 }}>
-            BREAKING THE DOOM LOOP v2.0 · PARAMETRIC FISCAL MODEL · ALL ASSUMPTIONS ADJUSTABLE<br/>
-            Reform savings discounted per IFS methodology (40-70% historical delivery rate)<br/>
-            Nuclear timeline: 15-20 GW by year 10, 50 GW by year 20 · Binding constraint: workforce, not regulation
+            BREAKING THE DOOM LOOP v2.0 · PARAMETRIC FISCAL MODEL · ALL ASSUMPTIONS ADJUSTABLE
           </div>
         </footer>
       </div>
