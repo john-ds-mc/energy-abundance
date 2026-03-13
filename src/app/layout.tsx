@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: "ENERGY ABUNDANCE | UK Policy Strategy Game",
   description:
     "Can you steer Britain to energy abundance? An interactive strategy game modelling UK nuclear, renewables, AI, and fiscal policy over 10 years.",
+  icons: {
+    icon: "/favicon.svg",
+  },
   openGraph: {
     title: "ENERGY ABUNDANCE | UK Policy Strategy Game",
     description:
