@@ -287,17 +287,16 @@ export default function EnergyAbundanceGame() {
   /* ─── PILLAR 1: NUCLEAR ─── */
   const [nuclearScale, setNuclearScale] = useState(100);     // % of WP programme
   const [costOverrun, setCostOverrun] = useState(0);         // % over baseline cost
-  const [koreanPartnership, setKoreanPartnership] = useState(true);
-  const [smrUnits, setSmrUnits] = useState(8);               // RR SMR units
-  const [koreanGW, setKoreanGW] = useState(0);               // additional APR1400 GW
-  const [workforceInvest, setWorkforceInvest] = useState(true);
-  const [legislativeOverride, setLegislativeOverride] = useState(true);
+  const [koreanPartnership, setKoreanPartnership] = useState(true); // KEPCO: £3.3bn/GW vs £14.4bn/GW HPC
+  const [smrUnits, setSmrUnits] = useState(8);               // RR SMR units (Wylfa)
+  const [koreanGW, setKoreanGW] = useState(0);               // additional APR1400 capacity
 
-  /* ─── PILLAR 2: COMPUTE HUB ─── */
-  const [dcDemand, setDcDemand] = useState(15);              // GW
-  const [dcTempGas, setDcTempGas] = useState(true);          // temporary gas for early DC
+  /* ─── PILLAR 2: COMPUTE HUB (endogenous demand) ─── */
+  // DC demand is computed from energy price + nuclear capacity — not a manual input
+  // WP: "The country that can offer guaranteed, cheap, clean power captures
+  //       a disproportionate share of the most valuable infrastructure buildout in history"
+  const [dcInvestmentClimate, setDcInvestmentClimate] = useState(100); // % attractiveness multiplier
   const [twoTierPricing, setTwoTierPricing] = useState(true);
-  const [subsea, setSubsea] = useState(true);
 
   /* ─── PILLAR 3: WELFARE REFORM ─── */
   const [tripleLockReform, setTripleLockReform] = useState(true);   // CPI + 0.5%
@@ -316,13 +315,8 @@ export default function EnergyAbundanceGame() {
   const [lvt, setLvt] = useState(0);                          // % of 1% LVT (raises ~£55bn at 100%)
   const [greenSteelInvest, setGreenSteelInvest] = useState(true);
   const [gigafactories, setGigafactories] = useState(true);
-  const [hydrogenHubs, setHydrogenHubs] = useState(5);
-  const [defenceNuclearLink, setDefenceNuclearLink] = useState(true);
   const [energyBonds, setEnergyBonds] = useState(true);       // 50-year dedicated bonds
   const [renewableScale, setRenewableScale] = useState(100);
-  const [criticalMinerals, setCriticalMinerals] = useState(false);
-  const [spaceIndustry, setSpaceIndustry] = useState(false);
-  const [semiconductors, setSemiconductors] = useState(false);
 
   /* ─── ACHIEVEMENT TRACKING ─── */
   const [unlockedAchs, setUnlockedAchs] = useState<Set<string>>(new Set());
@@ -361,45 +355,46 @@ export default function EnergyAbundanceGame() {
       // ── PILLAR 1: Nuclear capacity
       const ns = nuclearScale / 100;
       const costMult = 1 + costOverrun / 100;
-      const koreanDiscount = koreanPartnership ? 0.7 : 1.0; // WP: ~30% cheaper
-      const legislativeBoost = legislativeOverride ? 1.0 : 0.7; // 3-5yr saving
-      const workforceBoost = workforceInvest ? 1.0 : 0.7;
-      const buildEfficiency = koreanDiscount * legislativeBoost * workforceBoost;
 
-      // AGR retirements (happen regardless)
+      // Korean partnership: CHEAPER builds (£3.3bn/GW vs £14.4bn/GW HPC)
+      // AND FASTER (they bring experienced workforce + project management)
+      // WP: "importing Korean project management helps... perhaps half the Korean advantage transfers"
+      const koreanCostFactor = koreanPartnership ? 0.7 : 1.0;  // 30% cheaper
+      const koreanSpeedFactor = koreanPartnership ? 1.3 : 1.0;  // 30% faster build rate
+
+      // AGR retirements (happen regardless — fleet drops to Sizewell B only)
       const agr = AGR_RETIREMENT[t] || 0;
-      // HPC
+      // HPC: unit 1 yr 5, unit 2 yr 6 (already under construction, not affected by Korean deal)
       const hpc = (HPC_ONLINE[t] || 0) * ns;
-      // SZC
+      // SZC: yr 10-11
       const szc = (SZC_ONLINE[t] || 0) * ns;
-      // SMRs: from year 6, ~2/yr ramp
-      const smrOnline = t >= 6 ? Math.min(smrUnits, Math.floor((t - 5) * 2)) * B.smrGW * ns * buildEfficiency : 0;
-      // Korean APR1400: from year 4, ~1.4GW/yr
-      const korOnline = t >= 4 ? Math.min(koreanGW, (t - 3) * 1.4) * buildEfficiency : 0;
-      // Defence nuclear synergy: +10% build rate if linked
-      const defBoost = defenceNuclearLink ? 1.1 : 1.0;
-      // Fleet expansion beyond named projects (yr 8+)
-      const fleetExpansion = t >= 8 ? (t - 7) * 2.0 * ns * buildEfficiency * defBoost : 0;
+      // SMRs: RR SMR from year 6, ~2/yr ramp. Korean partnership speeds factory delivery.
+      const smrOnline = t >= 6 ? Math.min(smrUnits, Math.floor((t - 5) * 2 * koreanSpeedFactor)) * B.smrGW * ns : 0;
+      // Korean APR1400 reactors: from year 4, 1.4GW/yr. These are the Korean-built ones.
+      const korOnline = t >= 4 ? Math.min(koreanGW, (t - 3) * 1.4 * koreanSpeedFactor) : 0;
+      // Fleet expansion beyond named projects (yr 8+) — the programme's rolling build
+      const fleetExpansion = t >= 8 ? (t - 7) * 2.0 * ns * koreanSpeedFactor : 0;
 
       const nucGW = Math.max(0, B.nuclearGW + agr + hpc + szc + smrOnline + korOnline + fleetExpansion);
 
-      // Nuclear capex (WP schedule scaled)
-      const wpNucCost = (WP_NUCLEAR_NET_COST[t] || 10) * ns * costMult * (koreanPartnership ? 0.8 : 1);
+      // Nuclear capex: WP schedule, scaled by programme size and cost factors
+      // Korean partnership reduces cost. Cost overrun increases it. Both independent.
+      const wpNucCost = (WP_NUCLEAR_NET_COST[t] || 10) * ns * costMult * koreanCostFactor;
       cumNucCapex += wpNucCost;
 
       // Nuclear electricity revenue
       const nucTWh = nucGW * B.nuclearCF * 8.766;
-      const nucRevenue = nucTWh * (twoTierPricing ? 37.5 : 55) / 1000; // £/MWh
+      const nucRevenue = nucTWh * (twoTierPricing ? 37.5 : 55) / 1000; // £/MWh blended price
       const nucNet = wpNucCost - nucRevenue;
 
       // ── Renewables
       const renScale = renewableScale / 100;
       const renGW = B.totalRenewable * renScale * (1 + 0.035 * t);
 
-      // ── Wind CfD overlap cost
+      // ── Wind CfD overlap cost (WP: £2-8bn/yr in constraint payments)
       const windCfd = (WP_WIND_CFD_OVERLAP[t] || 0) * renScale;
 
-      // ── Grid investment
+      // ── Grid investment (WP: £15-25bn over programme)
       const gridCost = (WP_GRID_INVEST[t] || 0) * ns;
 
       // ── PILLAR 3: Reform savings (WP methodology — discounted)
@@ -435,7 +430,7 @@ export default function EnergyAbundanceGame() {
       // Planning reform: OBR +0.2% GDP by 2029, +0.4% by 2034
       const planningGrowth = (planningReform / 100) * (t < 5 ? 0.04 * t : 0.2 + 0.04 * Math.min(5, t - 5));
 
-      // Freeport / IZ expansion
+      // Freeport / IZ expansion (22 zones, £6.4bn attracted to date)
       const freeportGrowth = (freeportExpansion / 100) * 0.15 * Math.min(1, t / 5);
       const freeportTax = (freeportExpansion / 100) * 2 * Math.min(1, t / 5);
 
@@ -443,23 +438,34 @@ export default function EnergyAbundanceGame() {
       const steelCost = greenSteelInvest ? (t < 4 ? 0.6 : 0) : 0;
       const gigaCost = gigafactories ? (t < 4 ? 1.0 : 0) : 0;
       const gigaRev = gigafactories && t >= 4 ? 1.5 * Math.min(1, (t - 3) / 4) : 0;
-      const h2Cost = t < 6 ? hydrogenHubs * 0.5 : 0;
-      const h2Rev = t >= 5 ? hydrogenHubs * 0.3 * Math.min(1, (t - 4) / 4) : 0;
-      const semiCost = semiconductors ? (t < 5 ? 0.2 : 0) : 0;
-      const spaceCost = spaceIndustry ? (t < 5 ? 0.1 : 0) : 0;
-      const mineralCost = criticalMinerals ? (t < 5 ? 0.1 : 0) : 0;
-      const mineralRev = criticalMinerals && t >= 4 ? 0.5 * Math.min(1, (t - 3) / 4) : 0;
-      const industrialGrowth = (greenSteelInvest ? 0.05 : 0) + (gigafactories ? 0.1 : 0) +
-        hydrogenHubs * 0.02 + (semiconductors ? 0.03 : 0) + (spaceIndustry ? 0.02 : 0) +
-        (criticalMinerals ? 0.02 : 0);
-
-      // ── PILLAR 2: Data centre economics
-      const dcTaxRevenue = Math.min(dcDemand, nucGW * 0.5) * 0.5 * Math.min(1, t / 4);
-      const dcInvestment = dcDemand * 0.3 * Math.min(1, t / 6); // private investment GDP effect
-      const dcTempGasCost = dcTempGas && t < 5 ? Math.min(dcDemand * 0.1, 3) : 0;
+      const industrialGrowth = (greenSteelInvest ? 0.05 : 0) + (gigafactories ? 0.1 : 0);
 
       // Energy bonds: reduce effective gilt cost by 15-20bp through dedicated issuance
       const bondBenefit = energyBonds ? 0.15 : 0;
+
+      // ── ENERGY PRICE (computed first — DC demand depends on it)
+      const reliableCap = nucGW + renGW * 0.30; // wind CF ~0.30 equiv
+      // Use previous year's DC to avoid circular dependency (price → DC → price)
+      const prevDC = i > 0 ? (rows[i-1].dcDemand as number) : B.currentDC;
+      const totalDemand = B.peakDemandGW + prevDC * 0.7;
+      const capacityRatio = reliableCap / totalDemand;
+      const priceEffect = capacityRatio > 1.3 ? 0.55 : capacityRatio > 1 ? 0.7 : capacityRatio > 0.8 ? 0.9 : 1.1;
+      const energyPrice = Math.max(18, B.wholesalePrice * priceEffect * (1 + costOverrun * 0.001));
+
+      // ── PILLAR 2: Data centre demand (ENDOGENOUS)
+      // WP: "The country that can offer guaranteed, cheap, clean power with fast
+      //  connection timelines captures a disproportionate share"
+      // DC demand is driven by: energy price, nuclear capacity (reliability signal),
+      // planning reform (connection speed), and investment climate multiplier
+      // 50GW queued in grid (NESO). Hyperscalers need guaranteed clean baseload.
+      const dcPriceSignal = Math.max(0, (80 - energyPrice) / 40); // 0 at £80+, 1 at £40
+      const dcCapacitySignal = Math.min(1, nucGW / 25);           // confidence in supply
+      const dcPlanningSignal = planningReform / 100 * 0.5;        // connection speed
+      const dcClimate = dcInvestmentClimate / 100;
+      // Peak potential: ~20GW (WP: 10-20GW). Ramps over time as infrastructure builds.
+      const dcDemand = Math.min(30, 20 * (dcPriceSignal * 0.4 + dcCapacitySignal * 0.4 + dcPlanningSignal * 0.2) * dcClimate * Math.min(1, t / 5));
+
+      const dcTaxRevenue = dcDemand * 0.5 * Math.min(1, t / 4);
 
       // ── GROWTH CALCULATION (WP table p13)
       const gm = scenarioMult;
@@ -472,15 +478,8 @@ export default function EnergyAbundanceGame() {
         planningGrowth + dcGrowthEffect + freeportGrowth + nicGrowthBoost + industrialGrowth) * gm;
       const reformedGrowth = Math.min(6, baseGrowth + growthUplift);
 
-      // ── ENERGY PRICE
-      const reliableCap = nucGW + renGW * 0.30; // wind CF ~0.30 equiv
-      const totalDemand = B.peakDemandGW + dcDemand * 0.7;
-      const capacityRatio = reliableCap / totalDemand;
-      const priceEffect = capacityRatio > 1.3 ? 0.55 : capacityRatio > 1 ? 0.7 : capacityRatio > 0.8 ? 0.9 : 1.1;
-      const energyPrice = Math.max(18, B.wholesalePrice * priceEffect * (1 + costOverrun * 0.001));
-
       // ── CO2
-      const co2 = Math.min(95, 25 + nucGW * 0.5 + renGW * 0.12 + hydrogenHubs * 2 +
+      const co2 = Math.min(95, 25 + nucGW * 0.5 + renGW * 0.12 +
         (greenSteelInvest ? 3 : 0) + (gigafactories ? 2 : 0));
 
       // ── REFORMED DEFICIT
@@ -488,10 +487,9 @@ export default function EnergyAbundanceGame() {
         - totalReformSaving
         + nucNet
         + windCfd + gridCost
-        - dcTaxRevenue + dcTempGasCost
+        - dcTaxRevenue
         + nicCost - corpTaxChange - lvtRevenue - freeportTax
-        + steelCost + gigaCost - gigaRev + h2Cost - h2Rev
-        + semiCost + spaceCost + mineralCost - mineralRev;
+        + steelCost + gigaCost - gigaRev;
 
       // ── DEBT
       baseDebt += baseDeficit;
@@ -520,9 +518,8 @@ export default function EnergyAbundanceGame() {
       ));
       const greenScore = Math.min(100, Math.round(co2));
       const industrialScore = Math.min(100, Math.round(
-        Math.min(dcDemand, 30) * 1.2 + exportRev * 1.5 + hydrogenHubs * 2.5 +
-        reformedGrowth * 4 + (gigafactories ? 8 : 0) + (greenSteelInvest ? 5 : 0) +
-        (semiconductors ? 3 : 0) + (spaceIndustry ? 2 : 0)
+        Math.min(dcDemand, 30) * 1.5 + exportRev * 1.5 +
+        reformedGrowth * 5 + (gigafactories ? 8 : 0) + (greenSteelInvest ? 5 : 0)
       ));
       const growthScore = Math.min(100, Math.round(reformedGrowth / 4 * 100));
 
@@ -547,6 +544,7 @@ export default function EnergyAbundanceGame() {
         nucCost: Math.round(nucNet),
         dcTax: +dcTaxRevenue.toFixed(1),
         exportRev: +exportRev.toFixed(1),
+        dcDemand: +dcDemand.toFixed(1),
         energyScore, fiscalScore, greenScore, industrialScore, growthScore,
         windCfd: Math.round(windCfd),
         gridCost: Math.round(gridCost),
@@ -557,13 +555,13 @@ export default function EnergyAbundanceGame() {
     }
     return rows;
   }, [baseGrowth, inflation, giltRate, giltSpread, nuclearScale, costOverrun,
-      koreanPartnership, smrUnits, koreanGW, workforceInvest, legislativeOverride,
-      dcDemand, dcTempGas, twoTierPricing, subsea,
+      koreanPartnership, smrUnits, koreanGW,
+      dcInvestmentClimate, twoTierPricing,
       tripleLockReform, spaAccelerate, pipReform, wcaTighten, nhsMHInvest,
       aiPublicSector, nationalOpportunityFund,
       employerNICut, corpTaxRate, planningReform, freeportExpansion, lvt,
-      greenSteelInvest, gigafactories, hydrogenHubs, defenceNuclearLink,
-      energyBonds, renewableScale, criticalMinerals, spaceIndustry, semiconductors,
+      greenSteelInvest, gigafactories,
+      energyBonds, renewableScale,
       scenarioMult, reformDiscount]);
 
   const last = data[YEARS - 1] as Record<string, number>;
@@ -591,11 +589,11 @@ export default function EnergyAbundanceGame() {
     check("surplus", data.some(r => (r.deficit as number) < 0));
     check("growth", data.some(r => (r.reformedGrowth as number) >= 3));
     check("hawk", (last.debtGdp as number) < 90);
-    check("compute", dcDemand >= 20);
+    check("compute", data.some(r => (r.dcDemand as number) >= 20));
     check("exporter", data.some(r => (r.exportRev as number) > 8));
     check("golden", totalScore >= 900);
     if (added) setUnlockedAchs(newU);
-  }, [data, dcDemand, totalScore]);
+  }, [data, totalScore]);
 
   useEffect(() => {
     if (toastQueue.length === 0) return;
@@ -609,7 +607,7 @@ export default function EnergyAbundanceGame() {
     if ((l.energyPrice as number) < 35) return { text: "BREAKING: UK energy prices hit all-time low — manufacturers return to Britain", type: "good" as const };
     if ((l.nuclearGW as number) > 40) return { text: "Britain becomes world's second-largest nuclear power — 'the French model, done faster'", type: "good" as const };
     if ((l.reformedGrowth as number) > 3.5) return { text: "UK leads G7 growth as energy abundance powers industrial renaissance", type: "good" as const };
-    if (dcDemand > 20) return { text: "UK overtakes Ireland as Europe's AI compute capital — Microsoft announces 5GW campus", type: "good" as const };
+    if ((last.dcDemand as number) > 15) return { text: "UK overtakes Ireland as Europe's AI compute capital — hyperscalers flock to cheap nuclear power", type: "good" as const };
     if ((l.deficit as number) < 0) return { text: "Chancellor announces first budget surplus in a generation — 'the doom loop is broken'", type: "good" as const };
     if ((l.debtGdp as number) > 115) return { text: "IMF warns UK debt trajectory 'unsustainable' — gilt vigilantes circle", type: "bad" as const };
     if (giltSpread > 80) return { text: "GILT CRISIS: Yields spike as markets question nuclear spending programme", type: "bad" as const };
@@ -618,7 +616,7 @@ export default function EnergyAbundanceGame() {
     if ((l.reformedGrowth as number) < 1) return { text: "OBR slashes growth forecast — doom loop tightens", type: "bad" as const };
     if ((l.co2 as number) > 60) return { text: "UK emissions hit lowest level since 1880 as nuclear fleet powers the grid", type: "good" as const };
     return { text: "Simulation active — drag sliders to model Britain's energy future", type: "neutral" as const };
-  }, [last, dcDemand, giltSpread]);
+  }, [last, giltSpread]);
 
   const surplus = (last.deficit as number) < 0;
   const radarData = [
@@ -632,25 +630,26 @@ export default function EnergyAbundanceGame() {
   const reset = () => {
     setBaseGrowth(1.5); setInflation(2.5); setGiltRate(4.5); setGiltSpread(0);
     setNuclearScale(100); setCostOverrun(0); setKoreanPartnership(true); setSmrUnits(8);
-    setKoreanGW(0); setWorkforceInvest(true); setLegislativeOverride(true);
-    setDcDemand(15); setDcTempGas(true); setTwoTierPricing(true); setSubsea(true);
+    setKoreanGW(0); setDcInvestmentClimate(100); setTwoTierPricing(true);
     setTripleLockReform(true); setSpaAccelerate(false); setPipReform(true);
     setWcaTighten(true); setNhsMHInvest(true); setAiPublicSector(50);
     setNationalOpportunityFund(true); setEmployerNICut(0); setCorpTaxRate(25);
     setPlanningReform(100); setFreeportExpansion(50); setLvt(0);
-    setGreenSteelInvest(true); setGigafactories(true); setHydrogenHubs(5);
-    setDefenceNuclearLink(true); setEnergyBonds(true); setRenewableScale(100);
-    setCriticalMinerals(false); setSpaceIndustry(false); setSemiconductors(false);
+    setGreenSteelInvest(true); setGigafactories(true);
+    setEnergyBonds(true); setRenewableScale(100);
     setScenario("central"); setUnlockedAchs(new Set()); setToastQueue([]);
   };
 
+  // Endogenous DC demand from last row for display
+  const endogenousDC = data.length > 0 ? (data[data.length - 1].dcDemand as number) : 0;
+
   const quickScenarios = [
-    { label: "Do Nothing", fn: () => { setNuclearScale(0); setSmrUnits(0); setKoreanGW(0); setPipReform(false); setWcaTighten(false); setTripleLockReform(false); setAiPublicSector(0); setPlanningReform(0); setDcDemand(3); } },
+    { label: "Do Nothing", fn: () => { setNuclearScale(0); setSmrUnits(0); setKoreanGW(0); setPipReform(false); setWcaTighten(false); setTripleLockReform(false); setAiPublicSector(0); setPlanningReform(0); setDcInvestmentClimate(30); } },
     { label: "White Paper Central", fn: reset },
     { label: "Korean + SMR Blitz", fn: () => { setKoreanPartnership(true); setKoreanGW(10); setSmrUnits(16); setNuclearScale(130); setCostOverrun(-20); } },
     { label: "Gilt Crisis (+130bp)", fn: () => { setGiltSpread(130); setBaseGrowth(0.8); } },
-    { label: "AI Supercycle", fn: () => { setAiPublicSector(100); setDcDemand(30); setPlanningReform(100); setSemiconductors(true); } },
-    { label: "Full Radical Reform", fn: () => { reset(); setTripleLockReform(true); setSpaAccelerate(true); setPipReform(true); setWcaTighten(true); setAiPublicSector(80); setEmployerNICut(30); setLvt(50); setPlanningReform(100); setFreeportExpansion(100); setKoreanGW(8); setSmrUnits(16); setNuclearScale(130); setDcDemand(25); setSemiconductors(true); setCriticalMinerals(true); } },
+    { label: "AI Supercycle", fn: () => { setAiPublicSector(100); setDcInvestmentClimate(150); setPlanningReform(100); } },
+    { label: "Full Radical Reform", fn: () => { reset(); setTripleLockReform(true); setSpaAccelerate(true); setAiPublicSector(80); setEmployerNICut(30); setLvt(50); setPlanningReform(100); setFreeportExpansion(100); setKoreanGW(8); setSmrUnits(16); setNuclearScale(130); setDcInvestmentClimate(130); } },
     { label: "Reset All", fn: reset },
   ];
 
@@ -719,6 +718,7 @@ export default function EnergyAbundanceGame() {
           <StatBox label="GROWTH" value={`${last.reformedGrowth}%`} sub={`OBR: ${last.baseGrowth}%`} color={(last.reformedGrowth as number) >= 3 ? COLORS.green : COLORS.yellow} />
           <StatBox label="DEFICIT" value={`£${Math.abs(last.deficit as number)}bn`} sub={surplus ? "SURPLUS" : "deficit"} color={surplus ? COLORS.green : COLORS.red} warn={!surplus && (last.deficit as number) > 80} />
           <StatBox label="DEBT/GDP" value={`${last.debtGdp}%`} sub={`net of asset: ${last.netDebtGdp}%`} color={(last.debtGdp as number) < 95 ? COLORS.teal : COLORS.red} warn={(last.debtGdp as number) > 110} />
+          <StatBox label="DATA CENTRES" value={`${endogenousDC.toFixed(1)}GW`} sub="endogenous demand" color={COLORS.cyan} />
           <StatBox label="CO2 CUT" value={`${last.co2}%`} color={COLORS.green} />
         </div>
 
@@ -736,22 +736,31 @@ export default function EnergyAbundanceGame() {
               <Toggle label="50-Year Energy Bonds" checked={energyBonds} onChange={setEnergyBonds} source="Dedicated issuance backed by nuclear PPAs" />
             </Card>
 
-            <Card title="Pillar 1: Nuclear Programme" accent={COLORS.blue}>
+            <Card title="Pillar 1: Nuclear Fleet" accent={COLORS.blue}>
               <Slider label="Programme Scale" min={0} max={150} step={5} value={nuclearScale} onChange={setNuclearScale} unit="%" source="100% = WP schedule. 15-20GW by yr10, 50GW by yr20" />
-              <Slider label="Cost Overrun" min={-30} max={100} step={5} value={costOverrun} onChange={setCostOverrun} unit="%" source="HPC: 3x original. Korean builds: on budget." />
-              <Slider label="SMR Units (RR)" min={0} max={20} step={1} value={smrUnits} onChange={setSmrUnits} source="£2.5bn/unit, 0.47GW. Wylfa site: up to 8." />
-              <Slider label="Korean APR1400 (GW)" min={0} max={15} step={0.5} value={koreanGW} onChange={setKoreanGW} unit="GW" source="£3.3bn/GW vs £14.4bn/GW HPC" />
-              <Toggle label="Korean Partnership (KEPCO)" checked={koreanPartnership} onChange={setKoreanPartnership} source="30% cost reduction, proven delivery" />
-              <Toggle label="Nuclear Skills Academy" checked={workforceInvest} onChange={setWorkforceInvest} source="WP: binding constraint is 50-80k skilled workers" />
-              <Toggle label="Legislative Override (BEC Act)" checked={legislativeOverride} onChange={setLegislativeOverride} source="Removes 3-5yr planning delay" />
-              <Toggle label="Defence-Civil Nuclear Link" checked={defenceNuclearLink} onChange={setDefenceNuclearLink} source="Shared workforce, £62.2bn defence budget" />
+              <Slider label="Cost Overrun / Underrun" min={-30} max={100} step={5} value={costOverrun} onChange={setCostOverrun} unit="%" source="HPC: 3x original. Korean builds: typically on budget." />
+              <Slider label="SMR Units (Rolls-Royce)" min={0} max={20} step={1} value={smrUnits} onChange={setSmrUnits} source="£2.5bn/unit, 0.47GW each. Wylfa site: up to 8." />
+              <Slider label="Korean APR1400 (GW)" min={0} max={15} step={0.5} value={koreanGW} onChange={setKoreanGW} unit="GW" source="£3.3bn/GW vs £14.4bn/GW HPC. 48-month design build." />
+              <Toggle label="Korean Partnership (KEPCO)" checked={koreanPartnership} onChange={setKoreanPartnership} source="30% cost reduction + 30% faster build. Workforce + project mgmt." />
+              <div style={{ fontSize: 8, fontFamily: MONO, color: "#2a3441", lineHeight: 1.4, marginTop: 4 }}>
+                Assumes: BEC Act (legislative fast-track), Nuclear Skills Academy (50-80k workers),
+                defence-civil nuclear integration, standardised design, primary legislation for approvals.
+              </div>
             </Card>
 
-            <Card title="Pillar 2: Compute Hub" accent={COLORS.cyan}>
-              <Slider label="Data Centre Demand" min={0} max={40} step={1} value={dcDemand} onChange={setDcDemand} unit="GW" source="50GW queued (NESO). WP target: 10-20GW" />
-              <Toggle label="Temporary Gas Bridging" checked={dcTempGas} onChange={setDcTempGas} source="Gas-powered DCs until nuclear delivers" />
-              <Toggle label="Two-Tier Pricing Model" checked={twoTierPricing} onChange={setTwoTierPricing} source="Firm £35-40/MWh + surplus wind £10-20/MWh" />
-              <Toggle label="Subsea Fibre Investment" checked={subsea} onChange={setSubsea} source="3 continent connectivity, 2-3yr lead time" />
+            <Card title="Pillar 2: Compute Hub (Endogenous)" accent={COLORS.cyan}>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontFamily: MONO, color: "#8892a4" }}>DC Demand (computed)</span>
+                  <span style={{ fontSize: 14, fontFamily: MONO, fontWeight: 800, color: COLORS.cyan }}>{endogenousDC.toFixed(1)} GW</span>
+                </div>
+                <div style={{ fontSize: 8.5, fontFamily: MONO, color: "#3a4558", lineHeight: 1.4 }}>
+                  Driven by energy price, nuclear capacity, and planning reform speed.
+                  Hyperscalers go where cheap, clean, guaranteed power is. 50GW queued in grid (NESO).
+                </div>
+              </div>
+              <Slider label="Investment Climate" min={30} max={200} step={5} value={dcInvestmentClimate} onChange={setDcInvestmentClimate} unit="%" source="Policy attractiveness: visas, tax, regulation, fibre." />
+              <Toggle label="Two-Tier Pricing" checked={twoTierPricing} onChange={setTwoTierPricing} source="Firm nuclear £35-40/MWh + surplus wind £10-20/MWh" />
             </Card>
 
             <Card title="Pillar 3: Welfare Reform" accent={COLORS.purple}>
@@ -765,18 +774,14 @@ export default function EnergyAbundanceGame() {
             </Card>
 
             <Card title="Pillar 4: Tax & Industrial Strategy" accent={COLORS.orange}>
-              <Slider label="Employer NIC Cut" min={0} max={50} step={5} value={employerNICut} onChange={setEmployerNICut} unit="%" source="NICs raise £108bn/yr. Oct 2024 increase: +£24bn" />
+              <Slider label="Employer NIC Cut" min={0} max={50} step={5} value={employerNICut} onChange={setEmployerNICut} unit="%" source="NICs raise £108bn/yr. WP: immediate benefit to every business" />
               <Slider label="Corporation Tax" min={15} max={30} step={1} value={corpTaxRate} onChange={setCorpTaxRate} unit="%" source="Current: 25%. Revenue: £91.2bn. IFS Laffer peak: ~36%" />
-              <Slider label="Planning Reform Ambition" min={0} max={100} step={5} value={planningReform} onChange={setPlanningReform} unit="%" source="OBR: +0.2% GDP by 2029, +0.4% by 2034" />
-              <Slider label="Freeport/IZ Expansion" min={0} max={100} step={10} value={freeportExpansion} onChange={setFreeportExpansion} unit="%" source="22 zones, £6.4bn attracted. Extended to 2031-34" />
-              <Slider label="Land Value Tax" min={0} max={100} step={5} value={lvt} onChange={setLvt} unit="%" source="1% on £5.5tn land = £55bn/yr. 100% = full 1% LVT" />
-              <Slider label="Renewable Scale" min={50} max={200} step={5} value={renewableScale} onChange={setRenewableScale} unit="%" source="100% = DESNZ pipeline (43-50GW offshore by 2030)" />
-              <Slider label="Hydrogen Hubs" min={0} max={10} step={1} value={hydrogenHubs} onChange={setHydrogenHubs} source="Target: 10GW by 2030. Current: <10MW operational" />
-              <Toggle label="Green Steel Investment (£2.5bn)" checked={greenSteelInvest} onChange={setGreenSteelInvest} source="EAF transition. Tata Port Talbot, British Steel" />
-              <Toggle label="Gigafactory Programme" checked={gigafactories} onChange={setGigafactories} source="Agratas 40GWh + AESC 20GWh. 100GWh+ needed" />
-              <Toggle label="Semiconductor Strategy" checked={semiconductors} onChange={setSemiconductors} source="£1bn/decade. Compound semiconductors world-leading" />
-              <Toggle label="Space Industry Growth" checked={spaceIndustry} onChange={setSpaceIndustry} source="£18.6bn → target £32bn. 55,550 FTEs" />
-              <Toggle label="Critical Minerals Strategy" checked={criticalMinerals} onChange={setCriticalMinerals} source="Vision 2035: 10% domestic production, 50kt lithium" />
+              <Slider label="Planning Reform" min={0} max={100} step={5} value={planningReform} onChange={setPlanningReform} unit="%" source="OBR: +0.2% GDP by 2029, +0.4% by 2034. Also drives DC demand." />
+              <Slider label="Freeport/IZ Expansion" min={0} max={100} step={10} value={freeportExpansion} onChange={setFreeportExpansion} unit="%" source="22 zones, £6.4bn attracted to date. Extended to 2031-34" />
+              <Slider label="Land Value Tax" min={0} max={100} step={5} value={lvt} onChange={setLvt} unit="%" source="1% on £5.5tn land = £55bn/yr. Radical: replaces business rates." />
+              <Slider label="Renewable Scale" min={50} max={200} step={5} value={renewableScale} onChange={setRenewableScale} unit="%" source="100% = DESNZ pipeline (43-50GW offshore wind by 2030)" />
+              <Toggle label="Green Steel (£2.5bn)" checked={greenSteelInvest} onChange={setGreenSteelInvest} source="EAF transition. Tata Port Talbot, British Steel Scunthorpe" />
+              <Toggle label="Gigafactory Programme" checked={gigafactories} onChange={setGigafactories} source="Agratas 40GWh + AESC 20GWh. UK needs 100GWh+ by 2030s" />
             </Card>
 
             <Card title="Quick Scenarios" accent={COLORS.yellow}>
@@ -933,7 +938,7 @@ export default function EnergyAbundanceGame() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, fontFamily: MONO }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid #2a3441" }}>
-                      {["Year","Nuc","Ren","£/MWh","Growth","Deficit","Base Def","Debt%","Net D%","Reform","Nuc Cost","DC Tax","Export","Debt Int"].map(h => (
+                      {["Year","Nuc","Ren","£/MWh","Growth","Deficit","Base Def","Debt%","Net D%","Reform","Nuc Cost","DC GW","DC Tax","Export"].map(h => (
                         <th key={h} style={{ padding: "3px 5px", textAlign: "right", color: "#4a5568", fontWeight: 500, fontSize: 8.5, whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -952,9 +957,9 @@ export default function EnergyAbundanceGame() {
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.teal }}>{r.netDebtGdp}%</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.purple }}>£{r.totalReformSaving}bn</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.yellow }}>£{r.nucCost}bn</td>
+                        <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.blue }}>{r.dcDemand}GW</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.cyan }}>£{r.dcTax}bn</td>
                         <td style={{ padding: "3px 5px", textAlign: "right", color: COLORS.orange }}>£{r.exportRev}bn</td>
-                        <td style={{ padding: "3px 5px", textAlign: "right", color: "#6b7a8d" }}>£{r.debtInt}bn</td>
                       </tr>
                     ))}
                   </tbody>
