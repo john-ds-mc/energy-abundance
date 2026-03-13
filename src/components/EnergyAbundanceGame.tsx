@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, ReferenceLine, RadarChart,
   PolarGrid, PolarAngleAxis, Radar, ComposedChart,
 } from "recharts";
+import WhitePaper from "./WhitePaper";
 
 /* ═══════════════════════════════════════════════════════════════════
    BREAKING THE DOOM LOOP v2.0 — PARAMETRIC FISCAL MODEL
@@ -885,13 +886,9 @@ export default function EnergyAbundanceGame() {
                 padding: "6px 14px", borderRadius: 6, border: `1px solid ${COLORS.teal}33`,
                 background: `${COLORS.teal}12`, color: COLORS.teal,
                 fontSize: 10, fontFamily: MONO, textDecoration: "none", fontWeight: 600,
-              }}>OPEN IN NEW TAB</a>
+              }}>DOWNLOAD PDF</a>
             </div>
-            <iframe
-              src="/Breaking_The_Doom_Loop_v2.pdf"
-              style={{ width: "100%", height: "calc(100vh - 220px)", border: "none", background: "#1a1a2e" }}
-              title="Breaking the Doom Loop v2.0 White Paper"
-            />
+            <WhitePaper />
           </div>
         )}
 
