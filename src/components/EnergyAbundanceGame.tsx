@@ -309,6 +309,9 @@ const GRID_STROKE = "rgba(255,255,255,0.04)";
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════ */
 export default function EnergyAbundanceGame() {
+  /* ─── TAB ─── */
+  const [activeTab, setActiveTab] = useState<"model"|"whitepaper">("model");
+
   /* ─── SCENARIO ─── */
   const [scenario, setScenario] = useState<"pessimistic"|"central"|"optimistic">("central");
   const scenarioMult = scenario === "optimistic" ? 1.25 : scenario === "pessimistic" ? 0.55 : 1.0;
@@ -855,6 +858,44 @@ export default function EnergyAbundanceGame() {
           </div>
         </header>
 
+        {/* TAB BAR */}
+        <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: "1px solid #1e2836" }}>
+          {[
+            { id: "model" as const, label: "PARAMETRIC MODEL" },
+            { id: "whitepaper" as const, label: "WHITE PAPER" },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+              padding: "8px 20px", border: "none", borderBottom: `2px solid ${activeTab === tab.id ? COLORS.teal : "transparent"}`,
+              background: activeTab === tab.id ? "rgba(78,205,196,0.06)" : "transparent",
+              color: activeTab === tab.id ? COLORS.teal : "#5a6578",
+              fontSize: 11, fontFamily: MONO, fontWeight: activeTab === tab.id ? 700 : 400,
+              letterSpacing: "0.1em", cursor: "pointer", transition: "all 0.2s",
+            }}>{tab.label}</button>
+          ))}
+        </div>
+
+        {activeTab === "whitepaper" && (
+          <div style={{ background: "rgba(15,23,42,0.4)", borderRadius: 12, border: "1px solid rgba(78,205,196,0.08)", overflow: "hidden" }}>
+            <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(78,205,196,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, fontFamily: SANS, color: "#e8ecf2" }}>Breaking the Doom Loop v2.0</div>
+                <div style={{ fontSize: 9, fontFamily: MONO, color: "#5a6578" }}>A 4-Pillar Programme for Energy Abundance</div>
+              </div>
+              <a href="/Breaking_The_Doom_Loop_v2.pdf" target="_blank" rel="noopener noreferrer" style={{
+                padding: "6px 14px", borderRadius: 6, border: `1px solid ${COLORS.teal}33`,
+                background: `${COLORS.teal}12`, color: COLORS.teal,
+                fontSize: 10, fontFamily: MONO, textDecoration: "none", fontWeight: 600,
+              }}>OPEN IN NEW TAB</a>
+            </div>
+            <iframe
+              src="/Breaking_The_Doom_Loop_v2.pdf"
+              style={{ width: "100%", height: "calc(100vh - 220px)", border: "none", background: "#1a1a2e" }}
+              title="Breaking the Doom Loop v2.0 White Paper"
+            />
+          </div>
+        )}
+
+        {activeTab === "model" && (<>
         {/* SCENARIO + STATS */}
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
           <ScenarioBtn label="PESSIMISTIC" active={scenario === "pessimistic"} onClick={() => setScenario("pessimistic")} color={COLORS.red} />
@@ -1243,7 +1284,7 @@ export default function EnergyAbundanceGame() {
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <div style={{ color: "#6b7a8d", fontWeight: 600, marginBottom: 4, fontSize: 8.5, letterSpacing: "0.08em" }}>WHITE PAPER</div>
-              <div>[29] McNally, J., <span style={{ color: "#5a6578" }}>Breaking the Doom Loop v2.0: A 4-Pillar Programme for Energy Abundance</span> — nuclear fleet schedule, consolidated fiscal position (p12), growth arithmetic (p13), reform savings by scenario (p11), risk register (p14-15), Korean partnership model (£3.3bn/GW vs £14.4bn/GW HPC)</div>
+              <div>[29] <span style={{ color: "#5a6578" }}>Breaking the Doom Loop v2.0: A 4-Pillar Programme for Energy Abundance</span> — nuclear fleet schedule, consolidated fiscal position (p12), growth arithmetic (p13), reform savings by scenario (p11), risk register (p14-15), Korean partnership model (£3.3bn/GW vs £14.4bn/GW HPC)</div>
             </div>
           </div>
           <div style={{ fontSize: 8, fontFamily: MONO, color: "#222b3a", marginTop: 12, lineHeight: 1.5, borderTop: "1px solid rgba(78,205,196,0.06)", paddingTop: 10 }}>
@@ -1253,6 +1294,8 @@ export default function EnergyAbundanceGame() {
             Nuclear timeline: 15-20 GW by year 10, 50 GW by year 20. Binding constraint is workforce (50-80k skilled workers), not regulation.
           </div>
         </div>
+
+        </>)}
 
         <footer style={{ textAlign: "center", padding: "20px 0 10px", borderTop: "1px solid rgba(78,205,196,0.06)", marginTop: 16 }}>
           <div style={{ fontSize: 8, fontFamily: MONO, color: "#151d2b", letterSpacing: "0.08em", lineHeight: 1.5 }}>
